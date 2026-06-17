@@ -42,6 +42,8 @@ function getDefaultShell(): string {
     const pwshPaths = [
       process.env.ProgramFiles + "\\PowerShell\\7\\pwsh.exe",                    // standard installer
       (process.env.LOCALAPPDATA || "") + "\\Microsoft\\WindowsApps\\pwsh.exe",   // MS Store
+      // Built-in Windows PowerShell 5.1 — has PSReadLine line editing, unlike cmd.exe.
+      (process.env.SystemRoot || "C:\\Windows") + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
     ];
     try {
       const fs = window.require("fs") as typeof import("fs");

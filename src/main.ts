@@ -29,7 +29,7 @@ export default class TerminalPlugin extends Plugin {
    *
    * Downstream usage:
    * ```ts
-   * const leanTerm = this.app.plugins.plugins["lean-terminal"];
+   * const leanTerm = this.app.plugins.plugins["lean-terminal-custom"];
    * const unregister = leanTerm.registerKeyHandler((e, session) => {
    *   if (e.type !== "keydown") return true;
    *   if (e.altKey && e.key === "ArrowLeft") { session.pty.write("\x1bb"); return false; }
@@ -176,7 +176,7 @@ export default class TerminalPlugin extends Plugin {
     // URI handler for clickable resume links in the registry note.
     // Gating happens inside resumeClaudeSession — the handler is always registered
     // so that flipping the setting doesn't require a plugin reload.
-    this.registerObsidianProtocolHandler("lean-terminal", (params) => {
+    this.registerObsidianProtocolHandler("lean-terminal-custom", (params) => {
       if (params.resume) {
         void resumeClaudeSession(this, params.resume);
       } else if (params.cwd) {

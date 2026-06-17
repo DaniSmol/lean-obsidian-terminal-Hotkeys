@@ -1,6 +1,6 @@
 {
-  "id": "lean-terminal",
-  "name": "Lean Terminal",
+  "id": "lean-terminal-custom",
+  "name": "Lean Terminal - with Hotkeys",
   "version": "1.3.0",
   "minAppVersion": "1.7.2",
   "description": "Embedded terminal panel powered by xterm.js and node-pty - no external windows.",

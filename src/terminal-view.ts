@@ -134,6 +134,7 @@ export class TerminalView extends ItemView {
     if (this.resizeTimer) window.clearTimeout(this.resizeTimer);
     this.resizeObserver?.disconnect();
     this.tabManager?.destroyAll();
+    this.tabManager?.dispose();
     this.tabManager = null;
   }
 

@@ -448,6 +448,8 @@ export class TerminalTabManager {
   private sessionCounter = 0;
   private dragSrcId: string | null = null;
   private readonly app: App;
+  /** Removes the window-level capture keydown listener installed in the constructor. */
+  private globalKeyCaptureCleanup: (() => void) | null = null;
 
   constructor(opts: TabManagerOptions) {
     this.app = opts.app;
@@ -463,6 +465,7 @@ export class TerminalTabManager {
     this.onTabsEmpty = opts.onTabsEmpty;
     this.requestSaveLayout = opts.requestSaveLayout;
     this.onSessionClose = opts.onSessionClose;
+    this.installGlobalKeyCapture();
   }
 
   /** Capture a session's current state as a SavedTab (used on close for recents). */
@@ -832,11 +835,13 @@ export class TerminalTabManager {
         return false;
       }
 
-      // Shift+Enter: send newline without submitting
+      // Shift+Enter: insert a newline at the cursor without submitting (fallback path;
+      // normally handled earlier by installGlobalKeyCapture). Ctrl+O carrier → PSReadLine
+      // Insert-newline; see installGlobalKeyCapture for why a bare LF is wrong.
       if (e.shiftKey && e.key === "Enter") {
         e.preventDefault();
         const s = this.sessions.find((s) => s.id === id);
-        if (s) s.pty.write("\n");
+        if (s) s.pty.write("\x0f");
         return false;
       }
 
@@ -859,8 +864,88 @@ export class TerminalTabManager {
         return false;
       }
 
+      // Terminal control shortcuts (Ctrl+A, Ctrl+K, Ctrl+E, Ctrl+U, …). Send the
+      // matching control byte straight to the PTY and consume the event. Without
+      // this, Obsidian/Electron can claim some of these combos (e.g. Ctrl+A
+      // "select all") before the shell's line editor (readline/PSReadLine) sees
+      // them. Plain Ctrl only — Cmd/Alt/Shift combos are left for app shortcuts.
+      // (Ctrl+C with a selection and Ctrl+V are already handled above.)
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.length === 1) {
+        const code = e.key.toUpperCase().charCodeAt(0);
+        if (code >= 64 && code <= 95) {
+          // ASCII @, A–Z, [ \ ] ^ _ → control bytes 0x00–0x1F
+          e.preventDefault();
+          e.stopPropagation();
+          const s = this.sessions.find((s) => s.id === id);
+          if (s) s.pty.write(String.fromCharCode(code & 0x1f));
+          return false;
+        }
+      }
+
       return true;
     });
+  }
+
+  /**
+   * Window-level, capture-phase keydown listener so the focused terminal *owns* its
+   * control keys before Obsidian's keymap (or any plugin hotkey) can claim them.
+   * This is why Ctrl+K, Ctrl+Shift+Enter, etc. would otherwise be swallowed: an
+   * Obsidian hotkey bound to the combo intercepts it in the capture phase before the
+   * event ever reaches xterm. Running first here, we forward the keystroke straight
+   * to the PTY and stop the event.
+   *
+   * Only fires when the focused element is inside an xterm instance (not the search
+   * box). Copy/paste (Ctrl+C / Ctrl+V) are intentionally left to xterm's own handler.
+   */
+  private installGlobalKeyCapture(): void {
+    const handler = (e: KeyboardEvent): void => {
+      if (e.type !== "keydown") return;
+      const target = e.target as HTMLElement | null;
+      if (!target || !target.closest?.(".xterm")) return;
+      const session = this.sessions.find((s) => s.containerEl.contains(target));
+      if (!session) return;
+
+      // Ctrl+Shift+Enter (and Shift+Enter): insert a newline AT THE CURSOR instead of
+      // submitting. We send Ctrl+O (0x0f), which the shell-integration script binds to
+      // PSReadLine's Insert-newline. A bare LF would be treated as AcceptLine and would
+      // submit complete input ("send current to line down") — which is what we're fixing.
+      if (e.key === "Enter" && e.shiftKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        session.pty.write("\x0f");
+        return;
+      }
+
+      // Plain Ctrl + letter readline shortcuts (Ctrl+A/E/K/U/W/L/…). Excludes c/v so
+      // xterm's copy/paste handling still runs, and excludes Alt/Meta/Shift combos.
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.length === 1) {
+        const lower = e.key.toLowerCase();
+        if (lower === "c" || lower === "v") return;
+        // Ctrl+O is reserved as the newline-insert carrier (above). Swallow stray
+        // presses so a literal Ctrl+O never injects an unexpected newline.
+        if (lower === "o") {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          return;
+        }
+        const code = e.key.toUpperCase().charCodeAt(0);
+        if (code >= 64 && code <= 95) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          session.pty.write(String.fromCharCode(code & 0x1f));
+        }
+      }
+    };
+    const win = this.terminalHostEl.win;
+    win.addEventListener("keydown", handler, { capture: true });
+    this.globalKeyCaptureCleanup = () =>
+      win.removeEventListener("keydown", handler, { capture: true });
+  }
+
+  /** Tear down manager-level listeners. Call from the view's onClose. */
+  dispose(): void {
+    this.globalKeyCaptureCleanup?.();
+    this.globalKeyCaptureCleanup = null;
   }
 
   private buildAutocomplete(

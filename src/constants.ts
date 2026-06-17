@@ -1,1 +1,1 @@
-export const VIEW_TYPE_TERMINAL = "terminal-view";
+export const VIEW_TYPE_TERMINAL = "terminal-view-custom";

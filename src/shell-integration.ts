@@ -51,16 +51,41 @@ const PWSH_SCRIPT = `
 # Lean Terminal - shell integration for PowerShell
 if ($env:__LOT_SHELL_INTEGRATION) { return }
 $env:__LOT_SHELL_INTEGRATION = "1"
+
+# ESC as [char]27. Windows PowerShell 5.1 does NOT support the \`e escape (added in
+# PowerShell 6), so \`e would emit a literal "e" and leak the OSC 133 markers
+# (e]133;...) into every prompt. [char]27 works in both 5.1 and 7+.
+$ESC = [char]27
+
+# Bash-style readline line editing (Ctrl+A/E/K/U/W/L, etc.). PSReadLine's default
+# Windows edit mode leaves these unbound, so the terminal would just echo ^A / ^K.
+if (Get-Command Set-PSReadLineKeyHandler -ErrorAction SilentlyContinue) {
+    Set-PSReadLineKeyHandler -Key Ctrl+a -Function BeginningOfLine
+    Set-PSReadLineKeyHandler -Key Ctrl+e -Function EndOfLine
+    Set-PSReadLineKeyHandler -Key Ctrl+k -Function KillLine
+    Set-PSReadLineKeyHandler -Key Ctrl+u -Function BackwardKillLine
+    Set-PSReadLineKeyHandler -Key Ctrl+w -Function BackwardKillWord
+    Set-PSReadLineKeyHandler -Key Ctrl+l -Function ClearScreen
+    Set-PSReadLineKeyHandler -Key Ctrl+b -Function BackwardChar
+    Set-PSReadLineKeyHandler -Key Ctrl+f -Function ForwardChar
+    # Insert a literal newline at the cursor (split), used by Ctrl+Shift+Enter /
+    # Shift+Enter. The plugin sends Ctrl+O (0x0f) for those combos. Unlike sending a
+    # bare LF — which PSReadLine treats as AcceptLine and submits complete input —
+    # this always inserts a newline regardless of whether the input is complete.
+    Set-PSReadLineKeyHandler -Chord Ctrl+o -ScriptBlock {
+        [Microsoft.PowerShell.PSConsoleReadLine]::Insert([char]10)
+    }
+}
 $__lot_original_prompt = $function:prompt
 function prompt {
     $ec = $global:LASTEXITCODE
-    [Console]::Out.Write("\`e]133;D;$ec\`e\\")
-    [Console]::Out.Write("\`e]133;A\`e\\")
+    [Console]::Out.Write("$ESC]133;D;$ec$ESC\\")
+    [Console]::Out.Write("$ESC]133;A$ESC\\")
     $result = & $__lot_original_prompt
-    [Console]::Out.Write("\`e]133;B\`e\\")
+    [Console]::Out.Write("$ESC]133;B$ESC\\")
     return $result
 }
-[Console]::Out.Write("\`e]133;A\`e\\")
+[Console]::Out.Write("$ESC]133;A$ESC\\")
 `.trim();
 
 function joinPath(...parts: string[]): string {

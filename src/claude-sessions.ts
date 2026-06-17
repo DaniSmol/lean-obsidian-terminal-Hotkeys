@@ -236,7 +236,7 @@ function generateRegistryMarkdown(entries: ClaudeSessionEntry[]): string {
     const branch = e.gitBranch || "-";
     const modified = e.modified ? e.modified.slice(0, 10) : "-";
     const msgs = e.messageCount > 0 ? String(e.messageCount) : "-";
-    const resumeUri = `obsidian://lean-terminal?resume=${e.sessionId}`;
+    const resumeUri = `obsidian://lean-terminal-custom?resume=${e.sessionId}`;
     return `| ${escapeTableCell(title)} | ${branch} | ${msgs} | ${modified} | [Resume](${resumeUri}) |`;
   });
 
@@ -254,7 +254,7 @@ function escapeTableCell(s: string): string {
 
 /**
  * Open a terminal tab that runs `claude --resume <sessionId>` on shell spawn.
- * Called from the obsidian://lean-terminal?resume=... protocol handler.
+ * Called from the obsidian://lean-terminal-custom?resume=... protocol handler.
  */
 export async function resumeClaudeSession(
   plugin: TerminalPlugin,

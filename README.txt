@@ -1,7 +1,7 @@
 Lean Terminal — with Hotkeys
 ============================
 
-A fork of Lean Terminal, the embedded terminal panel for Obsidian (powered by
+A fork of Lean Terminal by sdkasper, the embedded terminal panel for Obsidian (powered by
 xterm.js + node-pty). It adds the terminal keyboard shortcuts that were missing
 on Windows.
 
@@ -35,8 +35,8 @@ PowerShell.
 
 Installation
 ------------
-This is a fork, so it isn't in Obsidian's Community Plugins browser. Install it
-manually:
+This is a fork, so it isn't in Obsidian's Community Plugins browser. 
+Install it via obsidian install with Gihub link or manually:
 
 1. Get the plugin files: main.js, manifest.json and styles.css
    (from a release, or build them yourself — see "Building" below).

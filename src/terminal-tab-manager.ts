@@ -836,12 +836,12 @@ export class TerminalTabManager {
       }
 
       // Shift+Enter: insert a newline at the cursor without submitting (fallback path;
-      // normally handled earlier by installGlobalKeyCapture). Ctrl+O carrier → PSReadLine
-      // Insert-newline; see installGlobalKeyCapture for why a bare LF is wrong.
+      // normally handled earlier by installGlobalKeyCapture). Sends Meta+Enter (ESC+CR);
+      // see installGlobalKeyCapture for why a bare LF is wrong and why \x1b\r is portable.
       if (e.shiftKey && e.key === "Enter") {
         e.preventDefault();
         const s = this.sessions.find((s) => s.id === id);
-        if (s) s.pty.write("\x0f");
+        if (s) s.pty.write("\x1b\r");
         return false;
       }
 
@@ -906,13 +906,16 @@ export class TerminalTabManager {
       if (!session) return;
 
       // Ctrl+Shift+Enter (and Shift+Enter): insert a newline AT THE CURSOR instead of
-      // submitting. We send Ctrl+O (0x0f), which the shell-integration script binds to
-      // PSReadLine's Insert-newline. A bare LF would be treated as AcceptLine and would
-      // submit complete input ("send current to line down") — which is what we're fixing.
+      // submitting. We send Meta+Enter (ESC + CR, "\x1b\r"), the convention modern TUI
+      // line editors use for newline-in-place — Claude Code, REPLs, etc. all accept it
+      // (it's what Claude's `/terminal-setup` binds Shift+Enter to). At the bare shell
+      // prompt the shell-integration script binds the same sequence (PSReadLine reads it
+      // as Alt+Enter) to Insert-newline. A bare LF would be treated as AcceptLine and
+      // submit complete input — which is what we're fixing.
       if (e.key === "Enter" && e.shiftKey && !e.altKey && !e.metaKey) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        session.pty.write("\x0f");
+        session.pty.write("\x1b\r");
         return;
       }
 
@@ -921,13 +924,6 @@ export class TerminalTabManager {
       if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.length === 1) {
         const lower = e.key.toLowerCase();
         if (lower === "c" || lower === "v") return;
-        // Ctrl+O is reserved as the newline-insert carrier (above). Swallow stray
-        // presses so a literal Ctrl+O never injects an unexpected newline.
-        if (lower === "o") {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          return;
-        }
         const code = e.key.toUpperCase().charCodeAt(0);
         if (code >= 64 && code <= 95) {
           e.preventDefault();

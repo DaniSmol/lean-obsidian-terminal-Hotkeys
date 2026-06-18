@@ -69,10 +69,11 @@ if (Get-Command Set-PSReadLineKeyHandler -ErrorAction SilentlyContinue) {
     Set-PSReadLineKeyHandler -Key Ctrl+b -Function BackwardChar
     Set-PSReadLineKeyHandler -Key Ctrl+f -Function ForwardChar
     # Insert a literal newline at the cursor (split), used by Ctrl+Shift+Enter /
-    # Shift+Enter. The plugin sends Ctrl+O (0x0f) for those combos. Unlike sending a
-    # bare LF — which PSReadLine treats as AcceptLine and submits complete input —
-    # this always inserts a newline regardless of whether the input is complete.
-    Set-PSReadLineKeyHandler -Chord Ctrl+o -ScriptBlock {
+    # Shift+Enter. The plugin sends Meta+Enter (ESC + CR), which PSReadLine reads as
+    # Alt+Enter. Unlike a bare LF — which PSReadLine treats as AcceptLine and submits
+    # complete input — this always inserts a newline regardless of input completeness.
+    # Same sequence works inside TUI apps (Claude Code, REPLs) that honor Meta+Enter.
+    Set-PSReadLineKeyHandler -Chord Alt+Enter -ScriptBlock {
         [Microsoft.PowerShell.PSConsoleReadLine]::Insert([char]10)
     }
 }

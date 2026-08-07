@@ -1,4 +1,4 @@
-# Lean Terminal — with Hotkeys
+# Lean Terminal - with Hotkeys
 
 A fork of Lean Terminal by sdkasper, the embedded terminal panel for Obsidian (powered by
 xterm.js + node-pty). It adds the terminal keyboard shortcuts that were missing

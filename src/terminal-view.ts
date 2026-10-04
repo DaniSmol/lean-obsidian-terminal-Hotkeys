@@ -3,6 +3,7 @@ import { VIEW_TYPE_TERMINAL } from "./constants";
 import { TerminalTabManager, type TabManagerOptions, type CreateTabOpts } from "./terminal-tab-manager";
 import { pushRecentSession } from "./recent-sessions";
 import { requireNode, nodeProcess } from "./node-api";
+import { handleEscapeKey } from "./escape-focus";
 import type TerminalPlugin from "./main";
 import type { SavedViewState, SavedTab } from "./session-state";
 
@@ -115,6 +116,29 @@ export class TerminalView extends ItemView {
         // Defer so Obsidian's own leaf-switch focus logic completes first (prevents racing command palette)
         window.setTimeout(() => this.tabManager?.focusActive(), 0);
       })
+    );
+
+    // Obsidian handles Escape in a capture-phase window listener before xterm sees it
+    // and moves focus out of the terminal (#97). Our capture listener on the view runs
+    // after it, so re-assert focus if it was taken. The event itself is left untouched.
+    this.registerDomEvent(
+      this.containerEl,
+      "keydown",
+      (e: KeyboardEvent) =>
+        handleEscapeKey({
+          event: e,
+          enabled: this.plugin.settings.keepFocusOnEscape,
+          hasFocus: () => this.containerEl.contains(activeDocument.activeElement),
+          restore: () => {
+            this.app.workspace.setActiveLeaf(this.leaf, { focus: true });
+            this.tabManager?.focusActive();
+          },
+          deferSoon: (fn) => queueMicrotask(fn),
+          deferLater: (fn) => {
+            window.requestAnimationFrame(fn);
+          },
+        }),
+      true,
     );
 
     // Periodic save: every 10s, if terminal output happened since the last check,

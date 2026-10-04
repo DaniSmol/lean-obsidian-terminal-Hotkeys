@@ -71,6 +71,7 @@ export interface TerminalPluginSettings {
   wikiLinkInsertMode: WikiLinkInsertMode;
   clickableFilePaths: boolean;
   readlineShortcuts: boolean;
+  keepFocusOnEscape: boolean;
   /** Saved by closeTerminal(); restored by activateTerminal(). Cleared after restore. */
   lastViewState?: SavedViewState;
 }
@@ -110,6 +111,7 @@ export const DEFAULT_SETTINGS: TerminalPluginSettings = {
   wikiLinkInsertMode: "wikilink",
   clickableFilePaths: true,
   readlineShortcuts: true,
+  keepFocusOnEscape: true,
 };
 
 export function resolveShellPath(settings: TerminalPluginSettings): string {
@@ -317,6 +319,13 @@ export class TerminalSettingTab extends PluginSettingTab {
               "Enable Ctrl+K (kill to end), Ctrl+U (kill to start), Ctrl+W (kill word), " +
               "Ctrl+E (end of line), Ctrl+L (clear screen). Applies to all open and new tabs.",
             control: { type: "toggle", key: "readlineShortcuts" },
+          },
+          {
+            name: "Keep focus in terminal on escape",
+            desc:
+              "Pressing Escape inside the terminal (for example in vim, helix or Claude Code) keeps focus " +
+              "in the terminal instead of switching to another pane. Turn off to let Obsidian handle Escape.",
+            control: { type: "toggle", key: "keepFocusOnEscape" },
           },
         ],
       },
@@ -939,6 +948,19 @@ export class TerminalSettingTab extends PluginSettingTab {
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.readlineShortcuts).onChange(async (value) => {
           this.plugin.settings.readlineShortcuts = value;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Keep focus in terminal on escape")
+      .setDesc(
+        "Pressing Escape inside the terminal (for example in vim, helix or Claude Code) keeps focus " +
+        "in the terminal instead of switching to another pane. Turn off to let Obsidian handle Escape.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.keepFocusOnEscape).onChange(async (value) => {
+          this.plugin.settings.keepFocusOnEscape = value;
           await this.plugin.saveSettings();
         }),
       );

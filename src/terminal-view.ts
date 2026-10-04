@@ -182,6 +182,10 @@ export class TerminalView extends ItemView {
     this.tabManager?.updateLineHeight();
   }
 
+  updateMinimumContrastRatio(): void {
+    this.tabManager?.updateMinimumContrastRatio();
+  }
+
   applyTabBarPosition(): void {
     if (!this.viewContainer) return;
     this.viewContainer.removeClass("terminal-tabs-left");

@@ -187,6 +187,8 @@ Use this repo to report bugs, request features, or ask questions.
 
 If you want to support my work, you can use this link to [buy me a drink](https://kspr.me/cheers) - thank you, I appreciate you.
 
+**Disclosure:** after a minor or major update (for example 1.4.x to 1.5.0), the plugin shows a one-time pop-up inside Obsidian with a short what's-new list and a "Support development" button that opens the link above. Patch releases never show it, and you can turn it off under Settings > Lean Terminal > "Show update notice". The plugin makes no network requests for this; the link only opens when you click the button.
+
 ## Development
 
 ```bash

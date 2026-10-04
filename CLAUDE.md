@@ -31,6 +31,8 @@ src/
   binary-manager.ts         # Download/manage node-pty native binaries from GitHub releases
   node-api.ts               # Structural types for Node APIs used via Electron's require() (no @types/node)
   path-links.ts             # Pure helpers: find clickable path tokens, split :line[:col] suffix
+  update-notice.ts          # Pure helpers: when to show the one-time update notice (minor/major bumps only)
+  update-notice-modal.ts    # The update notice modal: what's new list and support link
   key-handler-registry.ts   # Registry backing the public registerKeyHandler() API
   wikilink-autocomplete.ts  # [[ ]] autocomplete overlay for vault notes inside the terminal
   claude-sessions.ts        # Scans Claude Code project sessions for the session registry

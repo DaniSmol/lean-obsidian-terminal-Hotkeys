@@ -79,6 +79,10 @@ export interface TerminalPluginSettings {
   clickableFilePaths: boolean;
   readlineShortcuts: boolean;
   keepFocusOnEscape: boolean;
+  /** Show a one-time thank-you pop-up after minor or major updates. */
+  showUpdateNotice: boolean;
+  /** Plugin version the user last had; drives the update notice. */
+  lastSeenVersion: string;
   /** Saved by closeTerminal(); restored by activateTerminal(). Cleared after restore. */
   lastViewState?: SavedViewState;
 }
@@ -120,6 +124,8 @@ export const DEFAULT_SETTINGS: TerminalPluginSettings = {
   clickableFilePaths: true,
   readlineShortcuts: true,
   keepFocusOnEscape: true,
+  showUpdateNotice: true,
+  lastSeenVersion: "",
 };
 
 export function resolveShellPath(settings: TerminalPluginSettings): string {
@@ -334,6 +340,13 @@ export class TerminalSettingTab extends PluginSettingTab {
               "Pressing Escape inside the terminal (for example in vim, helix or Claude Code) keeps focus " +
               "in the terminal instead of switching to another pane. Turn off to let Obsidian handle Escape.",
             control: { type: "toggle", key: "keepFocusOnEscape" },
+          },
+          {
+            name: "Show update notice",
+            desc:
+              "After a minor or major update, show a one-time pop-up with what's new and a link to support development. " +
+              "Patch releases never show it.",
+            control: { type: "toggle", key: "showUpdateNotice" },
           },
         ],
       },
@@ -986,6 +999,19 @@ export class TerminalSettingTab extends PluginSettingTab {
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.keepFocusOnEscape).onChange(async (value) => {
           this.plugin.settings.keepFocusOnEscape = value;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Show update notice")
+      .setDesc(
+        "After a minor or major update, show a one-time pop-up with what's new and a link to support development. " +
+        "Patch releases never show it.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.showUpdateNotice).onChange(async (value) => {
+          this.plugin.settings.showUpdateNotice = value;
           await this.plugin.saveSettings();
         }),
       );

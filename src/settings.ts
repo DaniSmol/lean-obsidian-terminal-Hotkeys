@@ -14,6 +14,12 @@ import {
   type SliderComponent,
 } from "obsidian";
 import type TerminalPlugin from "./main";
+import {
+  DEFAULT_MIN_CONTRAST_RATIO,
+  MAX_CONTRAST_RATIO,
+  MIN_CONTRAST_RATIO,
+  normalizeContrastRatio,
+} from "./contrast-ratio";
 import type { RecentSession, SavedViewState } from "./session-state";
 import {
   DEFAULT_TAB_COLORS,
@@ -44,6 +50,7 @@ export interface TerminalPluginSettings {
   fontSize: number;
   fontFamily: string;
   lineHeight: number;
+  minimumContrastRatio: number;
   theme: string;
   backgroundColor: string;
   cursorBlink: boolean;
@@ -71,6 +78,7 @@ export interface TerminalPluginSettings {
   wikiLinkInsertMode: WikiLinkInsertMode;
   clickableFilePaths: boolean;
   readlineShortcuts: boolean;
+  keepFocusOnEscape: boolean;
   /** Saved by closeTerminal(); restored by activateTerminal(). Cleared after restore. */
   lastViewState?: SavedViewState;
 }
@@ -84,6 +92,7 @@ export const DEFAULT_SETTINGS: TerminalPluginSettings = {
   fontSize: 14,
   fontFamily: "Menlo, Monaco, 'Courier New', monospace",
   lineHeight: 1.0,
+  minimumContrastRatio: DEFAULT_MIN_CONTRAST_RATIO,
   theme: "auto",
   backgroundColor: "",
   cursorBlink: true,
@@ -110,6 +119,7 @@ export const DEFAULT_SETTINGS: TerminalPluginSettings = {
   wikiLinkInsertMode: "wikilink",
   clickableFilePaths: true,
   readlineShortcuts: true,
+  keepFocusOnEscape: true,
 };
 
 export function resolveShellPath(settings: TerminalPluginSettings): string {
@@ -318,6 +328,13 @@ export class TerminalSettingTab extends PluginSettingTab {
               "Ctrl+E (end of line), Ctrl+L (clear screen). Applies to all open and new tabs.",
             control: { type: "toggle", key: "readlineShortcuts" },
           },
+          {
+            name: "Keep focus in terminal on escape",
+            desc:
+              "Pressing Escape inside the terminal (for example in vim, helix or Claude Code) keeps focus " +
+              "in the terminal instead of switching to another pane. Turn off to let Obsidian handle Escape.",
+            control: { type: "toggle", key: "keepFocusOnEscape" },
+          },
         ],
       },
       {
@@ -343,6 +360,18 @@ export class TerminalSettingTab extends PluginSettingTab {
               max: 2.0,
               step: 0.05,
               displayFormat: (value) => value.toFixed(2),
+            },
+          },
+          {
+            name: "Minimum contrast ratio",
+            desc: "Raises the contrast of grey and dim text so it stays readable (1-21). 1 turns this off; 4.5 matches VS Code. Dim text uses half of the value.",
+            control: {
+              type: "slider",
+              key: "minimumContrastRatio",
+              min: MIN_CONTRAST_RATIO,
+              max: MAX_CONTRAST_RATIO,
+              step: 0.5,
+              displayFormat: (value) => value.toFixed(1),
             },
           },
           {
@@ -521,6 +550,8 @@ export class TerminalSettingTab extends PluginSettingTab {
       value = value.trim() || DEFAULT_SETTINGS.claudeRegistryPath;
     } else if (key === "lineHeight" && typeof value === "number") {
       value = Math.round(value * 100) / 100;
+    } else if (key === "minimumContrastRatio") {
+      value = normalizeContrastRatio(value);
     }
 
     // Number controls can emit NaN from a cleared input; never persist that.
@@ -550,6 +581,9 @@ export class TerminalSettingTab extends PluginSettingTab {
         break;
       case "lineHeight":
         this.plugin.updateLineHeight();
+        break;
+      case "minimumContrastRatio":
+        this.plugin.updateMinimumContrastRatio();
         break;
       case "tabBarPosition":
         this.plugin.updateTabBarPosition();
@@ -942,6 +976,19 @@ export class TerminalSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }),
       );
+
+    new Setting(containerEl)
+      .setName("Keep focus in terminal on escape")
+      .setDesc(
+        "Pressing Escape inside the terminal (for example in vim, helix or Claude Code) keeps focus " +
+        "in the terminal instead of switching to another pane. Turn off to let Obsidian handle Escape.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.keepFocusOnEscape).onChange(async (value) => {
+          this.plugin.settings.keepFocusOnEscape = value;
+          await this.plugin.saveSettings();
+        }),
+      );
   }
 
   private buildIconRow(iconSetting: Setting): void {
@@ -1125,6 +1172,21 @@ export class TerminalSettingTab extends PluginSettingTab {
             this.plugin.settings.lineHeight = Math.round(value * 100) / 100;
             await this.plugin.saveSettings();
             this.plugin.updateLineHeight();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Minimum contrast ratio")
+      .setDesc("Raises the contrast of grey and dim text so it stays readable (1-21). 1 turns this off; 4.5 matches VS Code. Dim text uses half of the value.")
+      .addSlider((slider) => {
+        this.applyLegacySliderTooltip(slider);
+        slider
+          .setLimits(MIN_CONTRAST_RATIO, MAX_CONTRAST_RATIO, 0.5)
+          .setValue(this.plugin.settings.minimumContrastRatio)
+          .onChange(async (value) => {
+            this.plugin.settings.minimumContrastRatio = normalizeContrastRatio(value);
+            await this.plugin.saveSettings();
+            this.plugin.updateMinimumContrastRatio();
           });
       });
 

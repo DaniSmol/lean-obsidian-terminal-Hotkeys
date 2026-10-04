@@ -10,6 +10,7 @@ import type { SavedViewState } from "./session-state";
 import type { TerminalTabManager } from "./terminal-tab-manager";
 import { KeyHandlerRegistry, type TerminalKeyHandler } from "./key-handler-registry";
 import { requireNode } from "./node-api";
+import { pickTerminalLeaf } from "./terminal-leaf";
 
 // Public API types for downstream plugins (e.g. companion key-binding plugins).
 export type { TerminalSession } from "./terminal-tab-manager";
@@ -305,11 +306,19 @@ export default class TerminalPlugin extends Plugin {
     }
   }
 
+  /** The terminal pane a tab command should act on: focused pane, else active, else first (#104). */
+  private getTargetTerminalLeaf(): WorkspaceLeaf | null {
+    return pickTerminalLeaf(
+      this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL),
+      activeDocument.activeElement,
+      this.app.workspace.getActiveViewOfType(TerminalView)
+    );
+  }
+
   private newTab(): void {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
-    if (leaves.length > 0) {
-      const view = leaves[0].view as TerminalView;
-      view.createNewTab();
+    const leaf = this.getTargetTerminalLeaf();
+    if (leaf) {
+      (leaf.view as TerminalView).createNewTab();
     } else {
       // Open terminal first, then it auto-creates a tab
       void this.activateTerminal();
@@ -325,9 +334,8 @@ export default class TerminalPlugin extends Plugin {
   }
 
   private getActiveTabManager(): TerminalTabManager | null {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
-    if (!leaves.length) return null;
-    return (leaves[0].view as TerminalView).getTabManager() ?? null;
+    const leaf = this.getTargetTerminalLeaf();
+    return leaf ? ((leaf.view as TerminalView).getTabManager() ?? null) : null;
   }
 
   private navigateTerminalTab(delta: -1 | 1): void {
@@ -440,6 +448,13 @@ export default class TerminalPlugin extends Plugin {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
     for (const leaf of leaves) {
       (leaf.view as TerminalView).updateLineHeight();
+    }
+  }
+
+  updateMinimumContrastRatio(): void {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
+    for (const leaf of leaves) {
+      (leaf.view as TerminalView).updateMinimumContrastRatio();
     }
   }
 }

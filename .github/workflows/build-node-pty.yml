@@ -75,24 +75,6 @@ jobs:
           cp -r "$SRC/lib/"* "$PKG/lib/"
           cp "$SRC/package.json" "$PKG/"
 
-          # Copy third_party (conpty DLLs) from the npm-installed node-pty package.
-          # The npm node-pty tarball ships both win10-x64 and win10-arm64 under
-          # third_party/conpty/<version>/ - this is required for the Windows mouse
-          # fix (useConptyDll) to activate on ARM64. See shouldEnableConptyDll in
-          # src/pty-manager.ts, which requires third_party/conpty/<version>/win10-arm64/
-          # to contain both conpty.dll and OpenConsole.exe.
-          if [ -d "$SRC/third_party" ]; then
-            cp -r "$SRC/third_party" "$PKG/"
-          fi
-
-          # Fail loudly if the win10-arm64 conpty files are missing - a silent
-          # absence here would silently disable the ConPTY mouse fix for ARM64 users.
-          CONPTY_ARM64_DIR=$(find "$PKG/third_party/conpty" -mindepth 2 -maxdepth 2 -type d -name "win10-arm64" 2>/dev/null | head -n1)
-          if [ -z "$CONPTY_ARM64_DIR" ] || [ ! -f "$CONPTY_ARM64_DIR/conpty.dll" ] || [ ! -f "$CONPTY_ARM64_DIR/OpenConsole.exe" ]; then
-            echo "ERROR: third_party/conpty/<version>/win10-arm64/{conpty.dll,OpenConsole.exe} not found after staging npm node-pty package ($SRC). The ConPTY mouse fix (shouldEnableConptyDll in src/pty-manager.ts) requires these files for ARM64 - aborting build."
-            exit 1
-          fi
-
           # Download prebuilt ARM64 binaries from the dedicated release asset
           # (Windows-ARM64 cannot be cross-built in CI; binaries are hosted as a
           # release asset instead of being tracked in the repo)
@@ -109,6 +91,22 @@ jobs:
             echo "ERROR: Prebuilt binaries not found in $RUNNER_TEMP/arm64-prebuilds/${{ matrix.platform }}-${{ matrix.arch }} after extracting release asset"
             exit 1
           fi
+
+          # node-pty's native loader (useConptyDll) resolves conpty.dll and
+          # OpenConsole.exe from prebuilds/<platform>-<arch>/conpty/, next to
+          # conpty.node (see shouldEnableConptyDll in src/pty-manager.ts). The
+          # arm64-prebuilds release asset has them flat, so copy the conpty/
+          # subdir that the npm node-pty tarball ships (issue #105: without it
+          # spawn fails with "Cannot find conpty.dll").
+          cp -r "$SRC/prebuilds/${{ matrix.platform }}-${{ matrix.arch }}/conpty" "$PKG/prebuilds/${{ matrix.platform }}-${{ matrix.arch }}/"
+
+          # Fail loudly - a silent absence would break spawn for ARM64 users.
+          CONPTY_DEST="$PKG/prebuilds/${{ matrix.platform }}-${{ matrix.arch }}/conpty"
+          if [ ! -f "$CONPTY_DEST/conpty.dll" ] || [ ! -f "$CONPTY_DEST/OpenConsole.exe" ]; then
+            echo "ERROR: $CONPTY_DEST must contain conpty.dll and OpenConsole.exe (required by node-pty useConptyDll) - aborting build."
+            exit 1
+          fi
+
       - name: Package node-pty
         if: matrix.use-prebuilt != true
         shell: bash
@@ -135,6 +133,18 @@ jobs:
           # Copy third_party (conpty DLLs) if present
           if [ -d "$SRC/third_party" ]; then
             cp -r "$SRC/third_party" "$PKG/"
+          fi
+
+          # Windows: node-pty's useConptyDll resolves conpty.dll and
+          # OpenConsole.exe from prebuilds/<platform>-<arch>/conpty/ (see
+          # shouldEnableConptyDll in src/pty-manager.ts). Fail loudly if the
+          # npm layout changes, otherwise the mouse fix would silently turn off.
+          if [ "${{ matrix.platform }}" = "win32" ]; then
+            CONPTY_DEST="$PKG/prebuilds/${{ matrix.platform }}-${{ matrix.arch }}/conpty"
+            if [ ! -f "$CONPTY_DEST/conpty.dll" ] || [ ! -f "$CONPTY_DEST/OpenConsole.exe" ]; then
+              echo "ERROR: $CONPTY_DEST must contain conpty.dll and OpenConsole.exe (required by node-pty useConptyDll) - aborting build."
+              exit 1
+            fi
           fi
 
       - name: Apply Windows patch

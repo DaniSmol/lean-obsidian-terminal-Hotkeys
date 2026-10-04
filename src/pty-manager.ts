@@ -41,9 +41,6 @@ function loadNodePty(nodePtyDir: string): NodePtyModule {
   }
 }
 
-// Windows architectures for which node-pty ships conpty.dll + OpenConsole.exe.
-const CONPTY_ARCHES = new Set(["x64", "arm64"]);
-
 /**
  * Decides whether it is safe to pass `useConptyDll: true` to node-pty's spawn.
  *
@@ -71,8 +68,6 @@ export function shouldEnableConptyDll(
   arch: string
 ): boolean {
   if (platform !== "win32") return false;
-
-  if (!CONPTY_ARCHES.has(arch)) return false;
 
   const conptyDir = path.join(nodePtyDir, "prebuilds", `${platform}-${arch}`, "conpty");
   try {
@@ -106,7 +101,7 @@ export function repairConptyLayout(
   platform: string,
   arch: string
 ): boolean {
-  if (platform !== "win32" || !CONPTY_ARCHES.has(arch)) return false;
+  if (platform !== "win32") return false;
 
   try {
     const prebuildDir = path.join(nodePtyDir, "prebuilds", `${platform}-${arch}`);

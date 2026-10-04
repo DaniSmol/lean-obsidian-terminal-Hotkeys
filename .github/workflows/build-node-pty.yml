@@ -130,11 +130,6 @@ jobs:
             cp -r "$SRC/build/Release/"* "$PKG/build/Release/"
           fi
 
-          # Copy third_party (conpty DLLs) if present
-          if [ -d "$SRC/third_party" ]; then
-            cp -r "$SRC/third_party" "$PKG/"
-          fi
-
           # Windows: node-pty's useConptyDll resolves conpty.dll and
           # OpenConsole.exe from prebuilds/<platform>-<arch>/conpty/ (see
           # shouldEnableConptyDll in src/pty-manager.ts). Fail loudly if the

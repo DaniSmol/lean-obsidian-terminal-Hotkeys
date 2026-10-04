@@ -2,6 +2,18 @@
 
 All notable changes to Lean Obsidian Terminal are documented here.
 
+## 1.4.1 - October 4, 2026
+
+### New
+
+- New: "Minimum contrast ratio" setting (1 to 21, default 4.5) that raises the contrast of grey and dim text, applied live to open terminals. Set it to 1 to restore the previous rendering (#106)
+
+### Bug fixes
+
+- Fix: Windows ARM64 terminal failed to start with "Cannot find conpty.dll" because the 1.4.0 package had the ConPTY files in the wrong folder. The modern ConPTY is now only enabled when the files are where node-pty loads them from, and existing ARM64 installs repair themselves the first time a terminal opens, no re-download needed (#105)
+- Fix: next, previous, first, last and "go to tab N" commands, and "New terminal tab", now act on the focused terminal pane instead of always the first pane (#104)
+- Fix: pressing Escape in the terminal (vim, helix, Claude Code) no longer moves focus out of the terminal. New setting "Keep focus in terminal on escape", on by default (#97)
+
 ## 1.4.0 - July 19, 2026
 
 ### New

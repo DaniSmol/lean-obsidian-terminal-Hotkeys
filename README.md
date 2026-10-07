@@ -22,6 +22,20 @@ they do in a normal terminal.
 - Sets up bash-style line editing in PowerShell automatically.
 - Fixes garbled prompt markers (`e]133;...`) that appeared under Windows
   PowerShell 5.1.
+- Restored terminal tabs no longer break typing: saved full-screen and mouse
+  modes are dropped on restore, and the new shell starts below the restored
+  history.
+- PowerShell 7 installed from the Microsoft Store is detected and launched
+  (from upstream pull request #102).
+- Optional command to open file links outside the vault in a terminal tab,
+  for example `micro +%L -- %F` (from upstream pull request #94). Leave it
+  empty to keep opening them with the default app.
+- The upstream update pop-up is off by default. It can be turned on under
+  Settings > Show update notice.
+
+Version 1.5.0 is based on upstream Lean Terminal 1.5.0 and includes its
+new features (minimum contrast setting, Escape keeps focus in the terminal,
+tab commands target the focused pane, ARM64 fix).
 
 Everything else from the original plugin works the same.
 

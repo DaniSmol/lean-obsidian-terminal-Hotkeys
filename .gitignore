@@ -1,0 +1,14 @@
+node_modules/
+main.js
+*.js.map
+.DS_Store
+Thumbs.db
+.claude/
+CLAUDE.md
+.planning/
+data.json
+shell-integration/
+.superpowers/
+.worktrees/
+arm64-prebuilds/
+dist-out/

@@ -1,6 +1,12 @@
 import { Platform } from "obsidian";
 import { getShellIntegration } from "./shell-integration";
-import { requireNode, nodeProcess, type FsApi, type PathApi } from "./node-api";
+import {
+  requireNode,
+  nodeProcess,
+  type ChildProcessApi,
+  type FsApi,
+  type PathApi,
+} from "./node-api";
 
 interface IPtyProcess {
   pid: number;
@@ -122,23 +128,96 @@ export function repairConptyLayout(
   }
 }
 
+export function resolveWindowsStorePwshAlias(
+  shellPath: string,
+  fs: FsApi,
+  childProcess: ChildProcessApi
+): string {
+  const normalized = shellPath.split("/").join("\\").toLowerCase();
+  if (!normalized.endsWith("\\microsoft\\windowsapps\\pwsh.exe")) return shellPath;
+
+  try {
+    const output = childProcess.execFileSync("where.exe", ["pwsh.exe"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    const candidates = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (const candidate of candidates) {
+      if (candidate.split("/").join("\\").toLowerCase() === normalized) continue;
+      try {
+        if (fs.statSync(candidate).isFile()) return candidate;
+      } catch {
+        // Try the next result from where.exe.
+      }
+    }
+  } catch {
+    // Try the Store package lookup below.
+  }
+
+  try {
+    const installLocation = childProcess.execFileSync(
+      "powershell.exe",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Get-AppxPackage -Name Microsoft.PowerShell | Sort-Object Version -Descending | Select-Object -First 1 -ExpandProperty InstallLocation",
+      ],
+      { encoding: "utf8", timeout: 5000 }
+    ).trim();
+    if (installLocation) {
+      const candidate = `${installLocation}\\pwsh.exe`;
+      if (fs.statSync(candidate).isFile()) return candidate;
+    }
+  } catch {
+    // Fall through so the normal shell validation reports the failure.
+  }
+
+  return shellPath;
+}
+
+/**
+ * Picks the default Windows shell, in order: PowerShell 7 (standard installer), PowerShell 7
+ * from the Microsoft Store, built-in Windows PowerShell 5.1, then COMSPEC / cmd.exe.
+ *
+ * The Store install is only a zero-byte app execution alias in WindowsApps that node-pty
+ * cannot launch, so it is resolved to the real package executable. That lookup runs
+ * where.exe and Get-AppxPackage synchronously, so it is only attempted when the alias
+ * actually exists. Otherwise every new tab on a machine without PowerShell 7 would block
+ * the main thread on those calls.
+ *
+ * Windows PowerShell 5.1 comes before cmd.exe because it has PSReadLine line editing.
+ */
+export function pickDefaultWindowsShell(
+  env: Record<string, string | undefined>,
+  fs: FsApi,
+  childProcess: ChildProcessApi
+): string {
+  const standardPwsh = (env.ProgramFiles || "") + "\\PowerShell\\7\\pwsh.exe";
+  const storeAlias = (env.LOCALAPPDATA || "") + "\\Microsoft\\WindowsApps\\pwsh.exe";
+  const windowsPowerShell =
+    (env.SystemRoot || "C:\\Windows") + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+  try {
+    if (env.ProgramFiles && fs.existsSync(standardPwsh)) return standardPwsh;
+    if (env.LOCALAPPDATA && fs.existsSync(storeAlias)) {
+      const resolvedStorePwsh = resolveWindowsStorePwshAlias(storeAlias, fs, childProcess);
+      if (resolvedStorePwsh !== storeAlias) return resolvedStorePwsh;
+    }
+    if (fs.existsSync(windowsPowerShell)) return windowsPowerShell;
+  } catch {
+    // ignore
+  }
+  return env.COMSPEC || "cmd.exe";
+}
+
 function getDefaultShell(): string {
   if (Platform.isWin) {
-    const pwshPaths = [
-      nodeProcess.env.ProgramFiles + "\\PowerShell\\7\\pwsh.exe",                    // standard installer
-      (nodeProcess.env.LOCALAPPDATA || "") + "\\Microsoft\\WindowsApps\\pwsh.exe",   // MS Store
-      // Built-in Windows PowerShell 5.1 — has PSReadLine line editing, unlike cmd.exe.
-      (nodeProcess.env.SystemRoot || "C:\\Windows") + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-    ];
     try {
-      const fs = requireNode("fs");
-      for (const p of pwshPaths) {
-        if (p && fs.existsSync(p)) return p;
-      }
+      return pickDefaultWindowsShell(nodeProcess.env, requireNode("fs"), requireNode("child_process"));
     } catch {
-      // ignore
+      return nodeProcess.env.COMSPEC || "cmd.exe";
     }
-    return nodeProcess.env.COMSPEC || "cmd.exe";
   }
   return nodeProcess.env.SHELL || "/bin/bash";
 }
@@ -199,7 +278,16 @@ export class PtyManager {
     const nodePtyDir = getNodePtyDir(this.pluginDir);
     this.nodePty = loadNodePty(nodePtyDir);
 
-    const shell = shellPath || getDefaultShell();
+    // A shell path set in settings may also point at the Store alias. The resolver
+    // returns any other path unchanged without running a process.
+    const requestedShell = shellPath || getDefaultShell();
+    const shell = Platform.isWin
+      ? resolveWindowsStorePwshAlias(
+          requestedShell,
+          requireNode("fs"),
+          requireNode("child_process")
+        )
+      : requestedShell;
     this._shellPath = shell;
     validateShellPath(shell);
     const baseArgs = getShellArgs(shell);

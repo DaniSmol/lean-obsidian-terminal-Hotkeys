@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { shouldEnableConptyDll, repairConptyLayout } from "./pty-manager";
-import type { FsApi, PathApi } from "./node-api";
+import {
+  shouldEnableConptyDll,
+  repairConptyLayout,
+  resolveWindowsStorePwshAlias,
+  pickDefaultWindowsShell,
+} from "./pty-manager";
+import type { ChildProcessApi, FsApi, PathApi } from "./node-api";
 
 // shouldEnableConptyDll only touches existsSync and path.join, so an
 // in-memory fake is enough - no real filesystem or Electron needed.
@@ -158,5 +163,112 @@ describe("repairConptyLayout", () => {
       },
     } as unknown as FsApi;
     expect(repairConptyLayout(fs, posixPath, NODE_PTY_DIR, "win32", "arm64")).toBe(false);
+  });
+});
+
+describe("resolveWindowsStorePwshAlias", () => {
+  const alias = "C:\\Users\\Test\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe";
+  const installed = "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe";
+
+  it("uses the installed package executable instead of the Store app execution alias", () => {
+    const fs = {
+      statSync: (path: string) => ({ isFile: () => path === installed }),
+    } as unknown as FsApi;
+    const childProcess = {
+      execFileSync: () => `${installed}\r\n${alias}\r\n`,
+    } as unknown as ChildProcessApi;
+
+    expect(resolveWindowsStorePwshAlias(alias, fs, childProcess)).toBe(installed);
+  });
+
+  it("finds the installed Store package when where.exe only returns the alias", () => {
+    const installLocation = installed.slice(0, -"\\pwsh.exe".length);
+    const fs = {
+      statSync: (path: string) => ({ isFile: () => path === installed }),
+    } as unknown as FsApi;
+    const childProcess = {
+      execFileSync: (file: string) => file === "where.exe" ? `${alias}\r\n` : installLocation,
+    } as unknown as ChildProcessApi;
+
+    expect(resolveWindowsStorePwshAlias(alias, fs, childProcess)).toBe(installed);
+  });
+
+  it("does not change a normal PowerShell path", () => {
+    const fs = {} as FsApi;
+    const childProcess = {} as ChildProcessApi;
+    const normalPath = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
+
+    expect(resolveWindowsStorePwshAlias(normalPath, fs, childProcess)).toBe(normalPath);
+  });
+
+  it("leaves the alias unchanged when no usable package executable is found", () => {
+    const fs = {
+      statSync: () => {
+        throw Object.assign(new Error("Access denied"), { code: "EACCES" });
+      },
+    } as unknown as FsApi;
+    const childProcess = {
+      execFileSync: () => `${alias}\r\n`,
+    } as unknown as ChildProcessApi;
+
+    expect(resolveWindowsStorePwshAlias(alias, fs, childProcess)).toBe(alias);
+  });
+});
+
+describe("pickDefaultWindowsShell", () => {
+  const env = {
+    ProgramFiles: "C:\\Program Files",
+    LOCALAPPDATA: "C:\\Users\\Test\\AppData\\Local",
+    SystemRoot: "C:\\Windows",
+    COMSPEC: "C:\\Windows\\System32\\cmd.exe",
+  };
+  const standard = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
+  const alias = "C:\\Users\\Test\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe";
+  const installed = "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe";
+  const winPs = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+
+  function fsWith(files: string[]): FsApi {
+    return {
+      existsSync: (p: string) => files.includes(p),
+      statSync: (p: string) => ({ isFile: () => files.includes(p) }),
+    } as unknown as FsApi;
+  }
+  function recordingChildProcess(output: string): { cp: ChildProcessApi; calls: string[] } {
+    const calls: string[] = [];
+    const cp = {
+      execFileSync: (file: string) => {
+        calls.push(file);
+        return output;
+      },
+    } as unknown as ChildProcessApi;
+    return { cp, calls };
+  }
+
+  it("runs no child process when neither PowerShell 7 path exists", () => {
+    const { cp, calls } = recordingChildProcess("");
+    expect(pickDefaultWindowsShell(env, fsWith([winPs]), cp)).toBe(winPs);
+    expect(calls).toEqual([]);
+  });
+
+  it("falls back to COMSPEC when no PowerShell exists, without running a child process", () => {
+    const { cp, calls } = recordingChildProcess("");
+    expect(pickDefaultWindowsShell(env, fsWith([]), cp)).toBe(env.COMSPEC);
+    expect(calls).toEqual([]);
+  });
+
+  it("prefers the standard PowerShell 7 install without running a child process", () => {
+    const { cp, calls } = recordingChildProcess("");
+    expect(pickDefaultWindowsShell(env, fsWith([standard, alias, winPs]), cp)).toBe(standard);
+    expect(calls).toEqual([]);
+  });
+
+  it("resolves the Store alias to the installed package executable", () => {
+    const { cp } = recordingChildProcess(`${installed}\r\n${alias}\r\n`);
+    expect(pickDefaultWindowsShell(env, fsWith([alias, installed, winPs]), cp)).toBe(installed);
+  });
+
+  it("falls back to Windows PowerShell 5.1 when the Store alias cannot be resolved", () => {
+    const { cp } = recordingChildProcess(`${alias}\r\n`);
+    expect(pickDefaultWindowsShell(env, fsWith([alias, winPs]), cp)).toBe(winPs);
   });
 });

@@ -55,8 +55,9 @@ $env:__LOT_SHELL_INTEGRATION = "1"
 
 # ESC as [char]27. Windows PowerShell 5.1 does NOT support the \`e escape (added in
 # PowerShell 6), so \`e would emit a literal "e" and leak the OSC 133 markers
-# (e]133;...) into every prompt. [char]27 works in both 5.1 and 7+.
-$ESC = [char]27
+# (e]133;...) into every prompt. [char]27 works in both 5.1 and 7+. The variable is
+# prefixed so it does not overwrite a $ESC the user may define in their own profile.
+$__lot_esc = [char]27
 
 # Bash-style readline line editing (Ctrl+A/E/K/U/W/L, etc.). PSReadLine's default
 # Windows edit mode leaves these unbound, so the terminal would just echo ^A / ^K.
@@ -81,13 +82,13 @@ if (Get-Command Set-PSReadLineKeyHandler -ErrorAction SilentlyContinue) {
 $__lot_original_prompt = $function:prompt
 function prompt {
     $ec = $global:LASTEXITCODE
-    [Console]::Out.Write("$ESC]133;D;$ec$ESC\\")
-    [Console]::Out.Write("$ESC]133;A$ESC\\")
+    [Console]::Out.Write("$__lot_esc]133;D;$ec$__lot_esc\\")
+    [Console]::Out.Write("$__lot_esc]133;A$__lot_esc\\")
     $result = & $__lot_original_prompt
-    [Console]::Out.Write("$ESC]133;B$ESC\\")
+    [Console]::Out.Write("$__lot_esc]133;B$__lot_esc\\")
     return $result
 }
-[Console]::Out.Write("$ESC]133;A$ESC\\")
+[Console]::Out.Write("$__lot_esc]133;A$__lot_esc\\")
 `.trim();
 
 function joinPath(...parts: string[]): string {

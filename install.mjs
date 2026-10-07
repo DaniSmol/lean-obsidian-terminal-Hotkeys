@@ -49,7 +49,7 @@ if (existsSync(nodePtySrc)) {
     console.log("  Applied ConoutConnection patch (no Worker threads)");
   }
 
-  // Prebuilds, package.json, third_party — may be locked if Obsidian has terminal open
+  // Prebuilds (incl. prebuilds/<platform>-<arch>/conpty/) and package.json — may be locked if Obsidian has terminal open
   let binaryWarning = false;
   try {
     cpSync(join(nodePtySrc, "prebuilds"), join(nodePtyDest, "prebuilds"), { recursive: true });
@@ -60,14 +60,6 @@ if (existsSync(nodePtySrc)) {
     cpSync(join(nodePtySrc, "package.json"), join(nodePtyDest, "package.json"));
   } catch {
     binaryWarning = true;
-  }
-  const thirdParty = join(nodePtySrc, "third_party");
-  if (existsSync(thirdParty)) {
-    try {
-      cpSync(thirdParty, join(nodePtyDest, "third_party"), { recursive: true });
-    } catch {
-      binaryWarning = true;
-    }
   }
 
   if (binaryWarning) {

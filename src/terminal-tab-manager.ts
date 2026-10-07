@@ -18,6 +18,7 @@ import type { BinaryManager } from "./binary-manager";
 import type { SavedTab } from "./session-state";
 import { WikiLinkAutocomplete, type AutocompleteEntry } from "./wikilink-autocomplete";
 import type { KeyHandlerRegistry } from "./key-handler-registry";
+import { normalizeContrastRatio } from "./contrast-ratio";
 
 const SEARCH_DECORATIONS = {
   matchBackground: "#ffff0050",
@@ -537,6 +538,7 @@ export class TerminalTabManager {
       fontSize: this.settings.fontSize,
       fontFamily: this.settings.fontFamily,
       lineHeight: this.settings.lineHeight,
+      minimumContrastRatio: normalizeContrastRatio(this.settings.minimumContrastRatio),
       cursorBlink: this.settings.cursorBlink,
       cursorStyle: this.settings.cursorStyle,
       scrollback: this.settings.scrollback,
@@ -1409,6 +1411,13 @@ export class TerminalTabManager {
   updateLineHeight(): void {
     for (const session of this.sessions) {
       session.terminal.options.lineHeight = this.settings.lineHeight;
+    }
+  }
+
+  updateMinimumContrastRatio(): void {
+    const ratio = normalizeContrastRatio(this.settings.minimumContrastRatio);
+    for (const session of this.sessions) {
+      session.terminal.options.minimumContrastRatio = ratio;
     }
   }
 

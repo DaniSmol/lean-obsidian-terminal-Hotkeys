@@ -41,33 +41,24 @@ function loadNodePty(nodePtyDir: string): NodePtyModule {
   }
 }
 
-// Windows conpty arch directory names as laid out under node-pty's
-// third_party/conpty/<conptyVersion>/<archDir>/ (conpty.dll + OpenConsole.exe).
-const CONPTY_ARCH_DIRS: Record<string, string> = {
-  x64: "win10-x64",
-  arm64: "win10-arm64",
-};
-
 /**
  * Decides whether it is safe to pass `useConptyDll: true` to node-pty's spawn.
  *
  * Context (see GitHub issue #92): on Windows 10, node-pty's default ConPTY
  * (the in-box conhost) does not forward mouse input to TUI apps. Passing
- * `useConptyDll: true` makes node-pty launch the modern OpenConsole.exe it
- * ships under `third_party/conpty/<version>/<archDir>/`, which does forward
- * mouse input on both Windows 10 and 11.
+ * `useConptyDll: true` makes node-pty launch the modern OpenConsole.exe,
+ * which does forward mouse input on both Windows 10 and 11.
  *
- * This plugin does not bundle node-pty - it downloads a platform-specific
- * zip from GitHub releases at runtime (see binary-manager.ts). That zip is
- * built by .github/workflows/build-node-pty.yml, which only copies
- * `third_party` for the win32-x64 package; the win32-arm64 package is
- * assembled from a separately staged install that never copies
- * `third_party`, so it never contains the OpenConsole.exe/conpty.dll files.
- * Older already-downloaded installs may also predate this fix and lack the
- * files. Enabling the flag without these files present would break spawn
- * (or silently fall back to unwanted behavior), so this check gates on the
- * files actually existing on disk for the host architecture rather than
- * assuming they are there.
+ * node-pty's native loader resolves conpty.dll and OpenConsole.exe relative
+ * to conpty.node, i.e. `prebuilds/<platform>-<arch>/conpty/` - NOT the
+ * `third_party/conpty/` source tree of the npm package. This plugin does not
+ * bundle node-pty - it downloads a platform-specific zip from GitHub releases
+ * at runtime (see binary-manager.ts), and some packages (the 1.4.0 win32-arm64
+ * one, see issue #105) shipped the files flat in `prebuilds/<platform>-<arch>/`
+ * or only under `third_party`. Enabling the flag without the files at the
+ * exact path node-pty loads from makes spawn fail with "Cannot find
+ * conpty.dll", so this check gates on that path existing on disk rather than
+ * assuming it does.
  */
 export function shouldEnableConptyDll(
   fs: FsApi,
@@ -78,24 +69,56 @@ export function shouldEnableConptyDll(
 ): boolean {
   if (platform !== "win32") return false;
 
-  const archDir = CONPTY_ARCH_DIRS[arch];
-  if (!archDir) return false;
-
-  const conptyRoot = path.join(nodePtyDir, "third_party", "conpty");
-  if (!fs.existsSync(conptyRoot)) return false;
-
-  let versionDirs: string[];
+  const conptyDir = path.join(nodePtyDir, "prebuilds", `${platform}-${arch}`, "conpty");
   try {
-    versionDirs = fs.readdirSync(conptyRoot);
+    return (
+      fs.existsSync(path.join(conptyDir, "conpty.dll")) &&
+      fs.existsSync(path.join(conptyDir, "OpenConsole.exe"))
+    );
   } catch {
     return false;
   }
+}
 
-  return versionDirs.some((version) => {
-    const dll = path.join(conptyRoot, version, archDir, "conpty.dll");
-    const exe = path.join(conptyRoot, version, archDir, "OpenConsole.exe");
-    return fs.existsSync(dll) && fs.existsSync(exe);
-  });
+const CONPTY_FILES = ["conpty.dll", "OpenConsole.exe"];
+
+/**
+ * Repairs the conpty layout of installs downloaded from the 1.4.0 win32-arm64
+ * zip (issue #105): conpty.dll and OpenConsole.exe sit flat in
+ * `prebuilds/<platform>-<arch>/` but node-pty loads them from the `conpty/`
+ * subfolder next to conpty.node. Copies any missing file into `conpty/` so the
+ * Windows 10 mouse fix (see shouldEnableConptyDll) works without a re-download
+ * - re-downloading the 1.4.0 asset would reproduce the same flat layout.
+ *
+ * Best-effort and idempotent: never throws, never overwrites existing files,
+ * and does nothing when the flat files are absent. Returns true when it
+ * copied at least one file.
+ */
+export function repairConptyLayout(
+  fs: FsApi,
+  path: PathApi,
+  nodePtyDir: string,
+  platform: string,
+  arch: string
+): boolean {
+  if (platform !== "win32") return false;
+
+  try {
+    const prebuildDir = path.join(nodePtyDir, "prebuilds", `${platform}-${arch}`);
+    const conptyDir = path.join(prebuildDir, "conpty");
+    let copied = false;
+    for (const name of CONPTY_FILES) {
+      const src = path.join(prebuildDir, name);
+      const dest = path.join(conptyDir, name);
+      if (fs.existsSync(dest) || !fs.existsSync(src)) continue;
+      fs.mkdirSync(conptyDir, { recursive: true });
+      fs.copyFileSync(src, dest);
+      copied = true;
+    }
+    return copied;
+  } catch {
+    return false;
+  }
 }
 
 function getDefaultShell(): string {
@@ -193,11 +216,16 @@ export class PtyManager {
     // useConptyDll enables node-pty's bundled OpenConsole.exe instead of the
     // in-box conhost ConPTY. On Windows 10 the in-box conhost does not
     // forward mouse input (clicks/wheel) to TUI apps - see issue #92. Only
-    // enabled when the required files are actually present for this host's
-    // architecture (see shouldEnableConptyDll doc comment above).
+    // enabled when conpty.dll and OpenConsole.exe exist where node-pty loads
+    // them from, prebuilds/<platform>-<arch>/conpty/ (see shouldEnableConptyDll
+    // doc comment above).
+    const nodeFs = requireNode("fs");
+    const nodePath = requireNode("path");
+    // Heal installs from the 1.4.0 win32-arm64 zip first (issue #105).
+    repairConptyLayout(nodeFs, nodePath, nodePtyDir, nodeProcess.platform, nodeProcess.arch);
     const useConptyDll = shouldEnableConptyDll(
-      requireNode("fs"),
-      requireNode("path"),
+      nodeFs,
+      nodePath,
       nodePtyDir,
       nodeProcess.platform,
       nodeProcess.arch

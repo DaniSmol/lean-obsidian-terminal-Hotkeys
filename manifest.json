@@ -4,7 +4,6 @@
   "version": "1.5.0",
   "minAppVersion": "1.7.2",
   "description": "Embedded terminal panel powered by xterm.js and node-pty - no external windows.",
-  "author": "LeanProductivity",
-  "fundingUrl": "https://kspr.me/cheers",
+  "author": "LeanProductivity Forked by Smolink",
   "isDesktopOnly": true
 }

@@ -211,7 +211,8 @@ export function pickDefaultWindowsShell(
   return env.COMSPEC || "cmd.exe";
 }
 
-function getDefaultShell(): string {
+/** The shell binary a new PTY will spawn when no explicit shellPath is set. */
+export function getDefaultShell(): string {
   if (Platform.isWin) {
     try {
       return pickDefaultWindowsShell(nodeProcess.env, requireNode("fs"), requireNode("child_process"));

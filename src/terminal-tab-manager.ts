@@ -6,8 +6,13 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { SearchAddon } from "@xterm/addon-search";
 import type { IDisposable } from "@xterm/xterm";
-import { PtyManager } from "./pty-manager";
-import { findPathCandidates, splitLineSuffix } from "./path-links";
+import { PtyManager, getDefaultShell } from "./pty-manager";
+import {
+  findPathCandidates,
+  splitLineSuffix,
+  shellQuoteAlways,
+  buildExternalCommand,
+} from "./path-links";
 import { isObsidianDark } from "./themes";
 import { mixHex } from "./color-utils";
 import { findTabColor, DEFAULT_TINT_STRENGTH, MAX_TINT_STRENGTH } from "./tab-colors";
@@ -99,6 +104,12 @@ export interface CreateTabOpts {
   bufferSerial?: string;
   resumeCommand?: string;
   pinned?: boolean;
+  /**
+   * Skip auto-running the global `startupCommand` in this tab. Used when the caller
+   * runs its own command (e.g. opening an external file), so the two don't race
+   * onto the first prompt.
+   */
+  suppressGlobalStartup?: boolean;
 }
 
 /** Play a notification sound via the Web Audio API. */
@@ -218,12 +229,11 @@ function resolveSessionTheme(
 }
 
 function quotePath(rawPath: string, shellPath: string): string {
+  // Paths without spaces are passed as-is (dragged/pasted paths rarely need
+  // quoting); anything with a space is quoted for the target shell. The escaping
+  // and shell detection live in shellQuoteAlways so both call sites stay in sync.
   if (!rawPath.includes(" ")) return rawPath;
-  const lower = shellPath.toLowerCase();
-  if (lower.includes("bash") || lower.includes("zsh") || lower.includes("sh")) {
-    return `'${rawPath.replace(/'/g, "'\\''")}'`;
-  }
-  return `"${rawPath.replace(/"/g, '\\"')}"`;
+  return shellQuoteAlways(rawPath, shellPath);
 }
 
 /** Raster image extensions that TUIs such as Claude Code attach as vision input. */
@@ -502,6 +512,42 @@ export class TerminalTabManager {
    * is held in a local closure and never written to `session.resumeCommand`, so it
    * cannot be accidentally serialized into saved workspace state.
    */
+  /**
+   * Open a file that lives outside the vault. When `externalFileCommand` is set,
+   * run it in a fresh terminal tab (so TUI editors such as micro/vim/nano work,
+   * and files whose extension has no registered OS handler still open); otherwise
+   * hand the file to the OS default application via the Electron shell.
+   */
+  private openExternalFile(absPath: string, line: number | null): void {
+    const template = this.settings.externalFileCommand.trim();
+    if (!template) {
+      const { shell } = window.require("electron") as {
+        shell: { openPath: (p: string) => Promise<string> };
+      };
+      void shell.openPath(absPath);
+      return;
+    }
+    const path = window.require("path") as {
+      dirname(p: string): string;
+      basename(p: string): string;
+    };
+    // Quote against the shell that will ACTUALLY run: mirror PtyManager.spawn's
+    // resolution (explicit setting, else the auto-detected default). Quoting
+    // against the raw (often empty) setting would pick the wrong rules and could
+    // let a crafted filename inject shell code.
+    const shellPath = resolveShellPath(this.settings) || getDefaultShell();
+    const command = buildExternalCommand(template, absPath, line, shellPath);
+    // suppressGlobalStartup: this tab runs the file-open command itself; without
+    // this, createTab would ALSO fire the user's global startupCommand and the two
+    // would race onto the same prompt.
+    const session = this.createTab({
+      name: path.basename(absPath),
+      cwd: path.dirname(absPath),
+      suppressGlobalStartup: true,
+    });
+    this.setupStartupCommand(session, session.terminal, command);
+  }
+
   private setupStartupCommand(session: TerminalSession, terminal: Terminal, command: string): void {
     let executed = false;
     let fallbackTimer: number | null = null;
@@ -657,10 +703,7 @@ export class TerminalTabManager {
                   void this.app.workspace.openLinkText(resolved.linkpath, "", true);
                 }
               } else {
-                const { shell } = window.require("electron") as {
-                  shell: { openPath: (p: string) => Promise<string> };
-                };
-                void shell.openPath(resolved.absPath);
+                this.openExternalFile(resolved.absPath, targetLine);
               }
             },
           });
@@ -1114,7 +1157,12 @@ export class TerminalTabManager {
     // Fresh new tabs (no persisted buffer, no saved resumeCommand) run the global
     // startup command. A separate path (not session.resumeCommand) keeps it out of
     // serialized workspace state so it never re-fires on restore.
-    if (!session.resumeCommand && !opts?.bufferSerial && this.settings.startupCommand) {
+    if (
+      !session.resumeCommand &&
+      !opts?.bufferSerial &&
+      !opts?.suppressGlobalStartup &&
+      this.settings.startupCommand
+    ) {
       this.setupStartupCommand(session, terminal, this.settings.startupCommand);
     }
 

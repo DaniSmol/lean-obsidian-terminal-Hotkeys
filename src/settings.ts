@@ -20,6 +20,7 @@ import {
   MIN_CONTRAST_RATIO,
   normalizeContrastRatio,
 } from "./contrast-ratio";
+import { externalCommandMissingFile } from "./path-links";
 import type { RecentSession, SavedViewState } from "./session-state";
 import {
   DEFAULT_TAB_COLORS,
@@ -47,6 +48,12 @@ export interface TerminalPluginSettings {
   shellPathMac: string;
   shellPathLinux: string;
   startupCommand: string;
+  /**
+   * Command run in a new terminal tab to open a clicked file that lives outside
+   * the vault. Empty = open with the OS default application. Placeholders:
+   * `%F` (shell-quoted absolute path), `%L` (1-based line, 1 if unknown).
+   */
+  externalFileCommand: string;
   fontSize: number;
   fontFamily: string;
   lineHeight: number;
@@ -87,12 +94,17 @@ export interface TerminalPluginSettings {
   lastViewState?: SavedViewState;
 }
 
+/** Shown when a non-empty external file command has no %F placeholder. */
+const EXTERNAL_COMMAND_MISSING_FILE =
+  "The external file command needs the file placeholder, or no file path is passed.";
+
 export const DEFAULT_SETTINGS: TerminalPluginSettings = {
   shellPath: "",
   shellPathWin: "",
   shellPathMac: "",
   shellPathLinux: "",
   startupCommand: "",
+  externalFileCommand: "",
   fontSize: 14,
   fontFamily: "Menlo, Monaco, 'Courier New', monospace",
   lineHeight: 1.0,
@@ -265,6 +277,21 @@ export class TerminalSettingTab extends PluginSettingTab {
             name: "Startup command",
             desc: "Run this command automatically when a new terminal tab opens (e.g. claude, npm run dev)",
             control: { type: "text", key: "startupCommand", placeholder: "None" },
+          },
+          {
+            name: "External file open command",
+            desc:
+              "Command run in a new terminal tab when you click a file link outside the vault. " +
+              "Leave empty to open with the OS default app. Placeholders: %F = file path, %L = line number. " +
+              "Example: micro +%L -- %F",
+            control: {
+              type: "text",
+              key: "externalFileCommand",
+              placeholder: "None",
+              // A command without %F would open the editor on no file, a confusing no-op.
+              validate: (value) =>
+                externalCommandMissingFile(value) ? EXTERNAL_COMMAND_MISSING_FILE : undefined,
+            },
           },
           {
             name: "Default location",
@@ -879,6 +906,30 @@ export class TerminalSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    new Setting(containerEl)
+      .setName("External file open command")
+      .setDesc(
+        "Command run in a new terminal tab when you click a file link outside the vault. " +
+          "Leave empty to open with the OS default app. Placeholders: %F = file path, %L = line number. " +
+          "Example: micro +%L -- %F",
+      )
+      .addText((text) => {
+        text
+          .setPlaceholder("None")
+          .setValue(this.plugin.settings.externalFileCommand)
+          .onChange(async (value) => {
+            this.plugin.settings.externalFileCommand = value;
+            await this.plugin.saveSettings();
+          });
+        // Warn once (on blur, not per keystroke) if a non-empty command omits %F,
+        // which would open the editor on no file, a confusing silent no-op.
+        text.inputEl.addEventListener("blur", () => {
+          if (externalCommandMissingFile(this.plugin.settings.externalFileCommand)) {
+            new Notice(EXTERNAL_COMMAND_MISSING_FILE);
+          }
+        });
+      });
 
     new Setting(containerEl)
       .setName("Default location")

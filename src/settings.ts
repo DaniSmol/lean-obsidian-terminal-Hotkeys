@@ -124,7 +124,8 @@ export const DEFAULT_SETTINGS: TerminalPluginSettings = {
   clickableFilePaths: true,
   readlineShortcuts: true,
   keepFocusOnEscape: true,
-  showUpdateNotice: true,
+  // Off by default in this fork: the pop-up links to upstream's donation page. Users can still turn it on.
+  showUpdateNotice: false,
   lastSeenVersion: "",
 };
 

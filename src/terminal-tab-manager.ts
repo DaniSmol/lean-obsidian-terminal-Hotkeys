@@ -19,6 +19,7 @@ import type { SavedTab } from "./session-state";
 import { WikiLinkAutocomplete, type AutocompleteEntry } from "./wikilink-autocomplete";
 import type { KeyHandlerRegistry } from "./key-handler-registry";
 import { normalizeContrastRatio } from "./contrast-ratio";
+import { sanitizeRestoredBuffer } from "./restore-buffer";
 
 const SEARCH_DECORATIONS = {
   matchBackground: "#ffff0050",
@@ -440,7 +441,7 @@ export class TerminalTabManager {
       name: session.name,
       color: session.color,
       cwd: session.cwd,
-      bufferSerial: this.settings.persistBuffer ? session.serializeAddon.serialize() : undefined,
+      bufferSerial: this.settings.persistBuffer ? session.serializeAddon.serialize({ excludeModes: true }) : undefined,
       resumeCommand: session.resumeCommand,
       pinned: session.pinned || undefined,
     };
@@ -1056,8 +1057,15 @@ export class TerminalTabManager {
 
     // Replay prior buffer (from persisted state) before the PTY produces new output.
     // No visual marker is written — markers become part of the serialized buffer and
-    // accumulate across restores.
-    if (opts?.bufferSerial) terminal.write(opts.bufferSerial);
+    // accumulate across restores. The saved text is sanitised first (see
+    // sanitizeRestoredBuffer). If the replayed content fills the window, the cursor sits
+    // on the last row, so one more line break is needed or the new prompt lands one row
+    // too high, on top of the last restored line.
+    if (opts?.bufferSerial) {
+      terminal.write(sanitizeRestoredBuffer(opts.bufferSerial), () => {
+        if (terminal.buffer.active.cursorY >= terminal.rows - 1) terminal.write("\r\n");
+      });
+    }
 
     // Mark "output changed since last save" so the view's periodic timer can
     // trigger a save. We avoid calling requestSaveLayout on every write because

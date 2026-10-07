@@ -23,6 +23,7 @@ interface NodePtyModule {
       env?: Record<string, string | undefined>;
       useConpty?: boolean;
       useConptyDll?: boolean;
+      conptyInheritCursor?: boolean;
     }
   ): IPtyProcess;
 }
@@ -240,6 +241,10 @@ export class PtyManager {
       // ConPTY with patched ConoutConnection (inline socket piping, no Worker threads).
       // useConpty defaults to true on Windows — ConPTY has correct UTF-8/emoji support.
       // Fallback: set useConpty: false here if ConPTY deadlocks on your Electron build.
+      // Start the shell at xterm's current cursor row instead of letting ConPTY assume an
+      // empty screen. Without it, a restored buffer is overdrawn by the new shell's first
+      // frame, which repaints from the top-left. Ignored on non-Windows platforms.
+      conptyInheritCursor: true,
       ...(useConptyDll ? { useConptyDll: true } : {}),
     });
   }
